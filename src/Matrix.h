@@ -92,6 +92,7 @@ public:
   JSFUNC(GoodFeaturesToTrack)
   #ifdef HAVE_OPENCV_VIDEO
   JSFUNC(CalcOpticalFlowPyrLK)
+  JSFUNC(CalcOpticalFlowFarnebackPoints)
   #endif
   JSFUNC(HoughLinesP)
   JSFUNC(HoughCircles)

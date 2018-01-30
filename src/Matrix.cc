@@ -3,6 +3,7 @@
 #include "OpenCV.h"
 #include <string.h>
 #include <nan.h>
+#include <algorithm>
 
 Nan::Persistent<FunctionTemplate> Matrix::constructor;
 
@@ -85,6 +86,7 @@ void Matrix::Init(Local<Object> target) {
   Nan::SetPrototypeMethod(ctor, "goodFeaturesToTrack", GoodFeaturesToTrack);
   #ifdef HAVE_OPENCV_VIDEO
   Nan::SetPrototypeMethod(ctor, "calcOpticalFlowPyrLK", CalcOpticalFlowPyrLK);
+  Nan::SetPrototypeMethod(ctor, "calcOpticalFlowFarnebackPoints", CalcOpticalFlowFarnebackPoints);
   #endif
   Nan::SetPrototypeMethod(ctor, "houghLinesP", HoughLinesP);
   Nan::SetPrototypeMethod(ctor, "houghCircles", HoughCircles);
@@ -1787,6 +1789,70 @@ NAN_METHOD(Matrix::CalcOpticalFlowPyrLK) {
 
   info.GetReturnValue().Set(data);
 }
+
+NAN_METHOD(Matrix::CalcOpticalFlowFarnebackPoints) {
+  Nan::HandleScope scope;
+
+  Matrix *self = Nan::ObjectWrap::Unwrap<Matrix>(info.This());
+  Matrix *newMatrix = Nan::ObjectWrap::Unwrap<Matrix>(info[0]->ToObject());
+  Local<Array> points = Local<Array>::Cast(info[1]->ToObject());
+  std::vector<cv::Point2f> old_points;
+
+  for (unsigned int i=0; i<points->Length(); i++) {
+    Local<Object> pt = points->Get(i)->ToObject();
+    old_points.push_back(cv::Point2f(pt->Get(0)->NumberValue(), pt->Get(1)->NumberValue()));
+  }
+
+  float pyr_scale = info.Length() >= 3 ? info[2]->NumberValue() : .5;
+  int levels = info.Length() >= 4 ? info[3]->IntegerValue() : 6;
+  int winsize = info.Length() >= 5 ? info[4]->IntegerValue() : 30;
+  int iterations = info.Length() >= 6 ? info[5]->IntegerValue() : 3;
+  int poly_n = info.Length() >= 7 ? info[6]->IntegerValue() : 7;
+  float poly_sigma = info.Length() >= 8 ? info[7]->NumberValue() : 1.5;
+
+  int flags = cv::OPTFLOW_FARNEBACK_GAUSSIAN;
+
+  cv::Mat old_gray;
+  cv::cvtColor(self->mat, old_gray, CV_BGR2GRAY);
+
+  cv::Mat new_gray;
+  cv::cvtColor(newMatrix->mat, new_gray, CV_BGR2GRAY);
+
+  std::vector<cv::Point2f> new_points;
+  cv::Mat flow;
+
+  cv::calcOpticalFlowFarneback(old_gray, new_gray, flow, pyr_scale, levels, winsize, iterations, poly_n, poly_sigma, flags);
+
+  for (unsigned int i=0; i<old_points.size(); ++i) {
+    const cv::Point2f& p = old_points[i];
+    cv::Point2f flow_vec(flow.at<cv::Vec2f>(std::min(int(round(p.y)), old_gray.rows - 1), std::min(int(round(p.x)), old_gray.cols - 1)));
+    new_points.push_back(cv::Point2f(p.x + flow_vec.x, p.y + flow_vec.y));
+  }
+
+  v8::Local<v8::Array> old_arr = Nan::New<Array>(old_points.size());
+  v8::Local<v8::Array> new_arr = Nan::New<Array>(new_points.size());
+
+  for (unsigned int i=0; i<old_points.size(); i++) {
+    v8::Local<v8::Array> pt = Nan::New<Array>(2);
+    pt->Set(0, Nan::New<Number>((double) old_points[i].x));
+    pt->Set(1, Nan::New<Number>((double) old_points[i].y));
+    old_arr->Set(i, pt);
+  }
+
+  for (unsigned int i=0; i<new_points.size(); i++) {
+    v8::Local<v8::Array> pt = Nan::New<Array>(2);
+    pt->Set(0, Nan::New<Number>((double) new_points[i].x));
+    pt->Set(1, Nan::New<Number>((double) new_points[i].y));
+    new_arr->Set(i, pt);
+  }
+
+  Local<Object> data = Nan::New<Object>();
+  data->Set(Nan::New<String>("old_points").ToLocalChecked(), old_arr);
+  data->Set(Nan::New<String>("new_points").ToLocalChecked(), new_arr);
+
+  info.GetReturnValue().Set(data);
+}
+
 #endif
 
 NAN_METHOD(Matrix::HoughLinesP) {
